@@ -1,6 +1,6 @@
 class Translator {
     constructor() {
-        // Using a more reliable LibreTranslate instance
+        // Using LibreTranslate API
         this.API_URL = 'https://translate.argosopentech.com/translate';
         this.initializeElements();
         this.addEventListeners();
@@ -8,6 +8,8 @@ class Translator {
             translating: false,
             speaking: false
         };
+        this.translationHistory = this.loadHistory();
+        this.renderHistory();
     }
 
     initializeElements() {
@@ -21,6 +23,22 @@ class Translator {
         this.speakTargetBtn = document.getElementById('speakTargetBtn');
         this.copyBtn = document.getElementById('copyBtn');
         this.clearSourceBtn = document.getElementById('clearSourceBtn');
+
+        // Add history section to HTML
+        const historySection = document.createElement('div');
+        historySection.className = 'history-section';
+        historySection.innerHTML = `
+            <h3><i class="fas fa-history"></i> Translation History</h3>
+            <div class="history-list"></div>
+        `;
+        document.querySelector('.translator-container').appendChild(historySection);
+
+        // Add download button
+        const downloadBtn = document.createElement('button');
+        downloadBtn.id = 'downloadBtn';
+        downloadBtn.className = 'download-btn';
+        downloadBtn.innerHTML = '<i class="fas fa-download"></i> Download Translation';
+        document.querySelector('.button-group').appendChild(downloadBtn);
     }
 
     addEventListeners() {
@@ -30,6 +48,7 @@ class Translator {
         this.speakTargetBtn.addEventListener('click', () => this.speak(this.targetText.value, this.targetLang.value));
         this.copyBtn.addEventListener('click', () => this.copyToClipboard());
         this.clearSourceBtn.addEventListener('click', () => this.clearSource());
+        document.getElementById('downloadBtn').addEventListener('click', () => this.downloadTranslation());
         
         // Auto translate after typing stops
         let typingTimer;
@@ -79,6 +98,7 @@ class Translator {
             
             if (data.translatedText) {
                 this.targetText.value = data.translatedText;
+                this.saveToHistory(text, data.translatedText);
             } else {
                 throw new Error('Invalid translation response');
             }
@@ -93,6 +113,7 @@ class Translator {
                 
                 if (fallbackData.responseStatus === 200) {
                     this.targetText.value = fallbackData.responseData.translatedText;
+                    this.saveToHistory(text, fallbackData.responseData.translatedText);
                 } else {
                     throw new Error('Fallback translation failed');
                 }
@@ -171,6 +192,63 @@ class Translator {
         setTimeout(() => {
             toast.remove();
         }, 3000);
+    }
+
+    saveToHistory(sourceText, translatedText) {
+        const translation = {
+            timestamp: new Date().toISOString(),
+            sourceText,
+            translatedText,
+            sourceLang: this.sourceLang.value,
+            targetLang: this.targetLang.value
+        };
+
+        this.translationHistory.unshift(translation);
+        if (this.translationHistory.length > 10) {
+            this.translationHistory.pop();
+        }
+
+        localStorage.setItem('translationHistory', JSON.stringify(this.translationHistory));
+        this.renderHistory();
+    }
+
+    loadHistory() {
+        const saved = localStorage.getItem('translationHistory');
+        return saved ? JSON.parse(saved) : [];
+    }
+
+    renderHistory() {
+        const historyList = document.querySelector('.history-list');
+        historyList.innerHTML = this.translationHistory.map(item => `
+            <div class="history-item">
+                <div class="history-time">${new Date(item.timestamp).toLocaleString()}</div>
+                <div class="history-text">
+                    <div class="source-text">${item.sourceText}</div>
+                    <div class="translated-text">${item.translatedText}</div>
+                </div>
+                <div class="history-languages">
+                    ${item.sourceLang} → ${item.targetLang}
+                </div>
+            </div>
+        `).join('');
+    }
+
+    downloadTranslation() {
+        if (!this.sourceText.value || !this.targetText.value) {
+            this.showToast('No translation to download');
+            return;
+        }
+
+        const content = `Source Text (${this.sourceLang.value}):\n${this.sourceText.value}\n\nTranslated Text (${this.targetLang.value}):\n${this.targetText.value}`;
+        const blob = new Blob([content], { type: 'text/plain' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `translation_${new Date().toISOString().slice(0,10)}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
     }
 }
 
